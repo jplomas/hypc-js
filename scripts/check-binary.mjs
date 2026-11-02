@@ -20,6 +20,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(join(root, 'package.json'));
 const { keccak256 } = require('js-sha3');
 const HYPERION = 'theQRL/hyperion';
+// The only workflow that signs hyperion release assets; an attestation from any other workflow in
+// the repository is rejected.
+const HYPERION_RELEASE_WORKFLOW = `${HYPERION}/.github/workflows/ci.yml`;
 const LAST_UNATTESTED = '0.2.0';
 
 const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
@@ -70,9 +73,9 @@ try {
   }
   if (cmp(version, LAST_UNATTESTED) <= 0) console.log(`skip build provenance: ${version} predates attested hyperion releases`);
   else {
-    const att = spawnSync('gh', ['attestation', 'verify', file, '--repo', HYPERION], { encoding: 'utf8' });
+    const att = spawnSync('gh', ['attestation', 'verify', file, '--repo', HYPERION, '--signer-workflow', HYPERION_RELEASE_WORKFLOW], { encoding: 'utf8' });
     if (att.status !== 0) fail(`build provenance attestation does not verify: ${(att.stderr || att.stdout).trim()}`);
-    else ok(`build provenance attestation verifies against ${HYPERION}`);
+    else ok(`build provenance attestation verifies against ${HYPERION_RELEASE_WORKFLOW}`);
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

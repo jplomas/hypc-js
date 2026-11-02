@@ -62,6 +62,10 @@ The compiler must be released first; every later step verifies against it.
 
 ```bash
 npm audit signatures                                                    # in a project that depends on @theqrl/hypc
-gh attestation verify theqrl-hypc-X.Y.Z.tgz --repo theQRL/hypc-js        # tarball from the GitHub release
-gh attestation verify node_modules/@theqrl/hypc/hypjson.js --repo theQRL/hyperion   # compiler (hyperion releases after 0.2.0)
+# tarball from the GitHub release
+gh attestation verify theqrl-hypc-X.Y.Z.tgz --repo theQRL/hypc-js \
+  --signer-workflow theQRL/hypc-js/.github/workflows/release.yml
+# compiler (hyperion releases after 0.2.0)
+gh attestation verify node_modules/@theqrl/hypc/hypjson.js --repo theQRL/hyperion \
+  --signer-workflow theQRL/hyperion/.github/workflows/ci.yml
 ```

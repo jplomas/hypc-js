@@ -60,6 +60,9 @@ The compiler must be released first; every later step verifies against it.
 
 ## Verifying a release
 
+Use GitHub CLI 2.102.0 or later. Versions 2.51.0 to 2.101.0 accept an attestation from any workflow
+whose path begins with the `--signer-workflow` value (GHSA-wjmr-j3rp-mh2g).
+
 ```bash
 npm audit signatures                                                    # in a project that depends on @theqrl/hypc
 # tarball from the GitHub release

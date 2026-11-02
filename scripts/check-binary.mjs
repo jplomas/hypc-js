@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(join(root, 'package.json'));
 const { keccak256 } = require('js-sha3');
+const semver = require('semver');
 const HYPERION = 'theQRL/hyperion';
 // The only workflow that signs hyperion release assets; an attestation from any other workflow in
 // the repository is rejected.
@@ -76,8 +77,9 @@ try {
   }
   if (cmp(version, LAST_UNATTESTED) <= 0) console.log(`skip build provenance: ${version} predates attested hyperion releases`);
   else {
-    const gh = /^gh version (\d+\.\d+\.\d+)/.exec(spawnSync('gh', ['--version'], { encoding: 'utf8' }).stdout || '')?.[1];
-    if (!gh || cmp(gh, MIN_GH_VERSION) < 0) fail(`gh attestation verify needs GitHub CLI ${MIN_GH_VERSION} or later, found ${gh || 'none'}: older versions accept an attestation from any workflow whose path begins with the pinned one (GHSA-wjmr-j3rp-mh2g)`);
+    // Keep any pre-release suffix: semver sorts 2.102.0-rc.1 before 2.102.0.
+    const gh = /^gh version (\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/.exec(spawnSync('gh', ['--version'], { encoding: 'utf8' }).stdout || '')?.[1];
+    if (!semver.valid(gh) || semver.lt(gh, MIN_GH_VERSION)) fail(`gh attestation verify needs GitHub CLI ${MIN_GH_VERSION} or later, found ${gh || 'none'}: older versions accept an attestation from any workflow whose path begins with the pinned one (GHSA-wjmr-j3rp-mh2g)`);
     else {
       const att = spawnSync('gh', ['attestation', 'verify', file, '--repo', HYPERION, '--signer-workflow', HYPERION_RELEASE_WORKFLOW], { encoding: 'utf8' });
       if (att.status !== 0) fail(`build provenance attestation does not verify: ${(att.stderr || att.stdout).trim()}`);

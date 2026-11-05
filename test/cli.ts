@@ -1,6 +1,8 @@
 import tape from 'tape';
 import spawn from 'tape-spawn';
+import * as fs from 'fs';
 import * as path from 'path';
+import * as tmp from 'tmp';
 import hypc from '../';
 
 tape('CLI', function (t) {
@@ -48,6 +50,84 @@ tape('CLI', function (t) {
   t.test('--bin --optimize-runs not-a-number', function (st) {
     const spt = spawn(st, './hypc.js --bin --optimize-runs not-a-number test/resources/fixtureSmoke.hyp');
     spt.stderr.match(/^error: option '--optimize-runs <optimize-runs>' argument 'not-a-number' is invalid/);
+    spt.end();
+  });
+
+  t.test('--bin --optimize-runs with trailing characters', function (st) {
+    const spt = spawn(st, './hypc.js --bin --optimize-runs 12abc test/resources/fixtureSmoke.hyp');
+    spt.stderr.match(/^error: option '--optimize-runs <optimize-runs>' argument '12abc' is invalid/);
+    spt.fails();
+    spt.end();
+  });
+
+  t.test('--abi --pretty-json', function (st) {
+    const outputDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    const spt = spawn(st, `./hypc.js --abi --pretty-json -o ${outputDir} test/resources/fixtureSmoke.hyp`, { end: false });
+    spt.stderr.empty();
+    spt.succeeds();
+    spt.end(function () {
+      const abi = fs.readFileSync(path.join(outputDir, 'test_resources_fixtureSmoke_hyp_C.abi'), 'utf8');
+      st.ok(abi.split('\n').length > 1, 'ABI is pretty-printed');
+      st.end();
+    });
+  });
+
+  t.test('--bin --verbose writes diagnostics to stderr', function (st) {
+    const outputDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    const spt = spawn(st, `./hypc.js --bin --verbose -o ${outputDir} test/resources/fixtureSmoke.hyp`);
+    spt.stderr.match(/^>>> Compiling:/);
+    spt.succeeds();
+    spt.end();
+  });
+
+  t.test('output name collision', function (st) {
+    const outputDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    const sourceDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    fs.writeFileSync(path.join(sourceDir, 'a.b.hyp'), 'contract C {}');
+    fs.writeFileSync(path.join(sourceDir, 'a_b.hyp'), 'contract C {}');
+    const spt = spawn(st, `./hypc.js --bin -o ${outputDir} ${sourceDir}/a.b.hyp ${sourceDir}/a_b.hyp`);
+    spt.stderr.match(/^Warning: .*a\.b\.hyp:C and .*a_b\.hyp:C both write .*a_b_hyp_C; /);
+    spt.succeeds();
+    spt.end();
+  });
+
+  // A project directory and, next to it, a file outside it that imports must not reach.
+  function importEscapeFixture () {
+    const root = fs.realpathSync(tmp.dirSync({ unsafeCleanup: true }).name);
+    fs.mkdirSync(path.join(root, 'proj'));
+    fs.mkdirSync(path.join(root, 'outside'));
+    fs.writeFileSync(path.join(root, 'outside', 'leak.txt'), 'OUTSIDE-SECRET line1\n');
+    return root;
+  }
+
+  t.test('import escaping the base path is rejected', function (st) {
+    const root = importEscapeFixture();
+    fs.writeFileSync(path.join(root, 'proj', 'evil.hyp'), 'import "/../outside/leak.txt";\ncontract X {}\n');
+    const spt = spawn(st, `${path.resolve('hypc.js')} --bin --base-path proj proj/evil.hyp`, { cwd: root });
+    spt.stderr.match(/Source "\/\.\.\/outside\/leak\.txt" not found: File outside of allowed directories\./);
+    spt.stderr.match(/^(?![\s\S]*OUTSIDE-SECRET)/);
+    spt.fails();
+    spt.end();
+  });
+
+  t.test('absolute import outside the allowed directories is rejected', function (st) {
+    const root = importEscapeFixture();
+    const elsewhere = fs.realpathSync(tmp.dirSync({ unsafeCleanup: true }).name);
+    fs.writeFileSync(path.join(root, 'proj', 'evil.hyp'), `import "${root}/outside/leak.txt";\ncontract X {}\n`);
+    const spt = spawn(st, `${path.resolve('hypc.js')} --bin ${root}/proj/evil.hyp`, { cwd: elsewhere });
+    spt.stderr.match(/File outside of allowed directories\./);
+    spt.stderr.match(/^(?![\s\S]*OUTSIDE-SECRET)/);
+    spt.fails();
+    spt.end();
+  });
+
+  t.test('symlink out of the base path is rejected', function (st) {
+    const root = importEscapeFixture();
+    fs.symlinkSync(path.join(root, 'outside', 'leak.txt'), path.join(root, 'proj', 'link.hyp'));
+    fs.writeFileSync(path.join(root, 'proj', 'evil.hyp'), 'import "link.hyp";\ncontract X {}\n');
+    const spt = spawn(st, `${path.resolve('hypc.js')} --bin --base-path proj proj/evil.hyp`, { cwd: root });
+    spt.stderr.match(/Source "link\.hyp" not found: File outside of allowed directories\./);
+    spt.fails();
     spt.end();
   });
 
@@ -198,6 +278,19 @@ tape('CLI', function (t) {
       spt.stderr.empty();
       spt.stdout.match(/Contract.hyp/);
       spt.stdout.match(/userdoc/);
+      spt.succeeds();
+      spt.end();
+    });
+  });
+
+  t.test('standard json --pretty-json with input that is not JSON', function (st) {
+    const spt = spawn(st, './hypc.js --standard-json --pretty-json');
+    spt.stdin.setEncoding('utf-8');
+    spt.stdin.write('{not json');
+    spt.stdin.end();
+    spt.stdin.on('finish', function () {
+      spt.stderr.empty();
+      spt.stdout.match(/"type": "JSONError"/);
       spt.succeeds();
       spt.end();
     });

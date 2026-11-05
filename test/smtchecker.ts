@@ -40,7 +40,8 @@ tape('SMTChecker', function (t) {
     const cbFun = smtchecker.smtCallback((content) => { throw new Error(content); });
     const response = cbFun('expected-error-message');
 
-    st.deepEqual(response, { error: new Error('expected-error-message') });
+    // The error is passed on as a string, which is what the compiler's callback takes.
+    st.deepEqual(response, { error: 'Error: expected-error-message' });
     st.end();
   });
 

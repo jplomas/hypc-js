@@ -18,3 +18,17 @@ export function isObject (value: any): boolean {
   // to confirm it's just an object.
   return typeof value === 'object' && !Array.isArray(value);
 }
+
+/**
+ * Returns the exception as a string for an error message, such as `Error: boom` or
+ * `RangeError: Maximum call stack size exceeded`.
+ *
+ * @param e The thrown value.
+ */
+export function describeException (e: any): string {
+  try {
+    return String(e);
+  } catch (conversionError) {
+    return 'an exception that cannot be converted to a string';
+  }
+}

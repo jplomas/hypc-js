@@ -244,9 +244,15 @@ function runTests (hypc, versionText) {
         function findImports (path) {
           throw new Error('Could not implement this interface properly...');
         }
-        st.throws(function () {
-          hypc.lowlevel.compileCallback(JSON.stringify({ sources: input }), 0, { import: findImports });
-        }, /^Error: Could not implement this interface properly.../);
+        let output;
+        st.doesNotThrow(function () {
+          output = JSON.parse(hypc.lowlevel.compileCallback(JSON.stringify({ sources: input }), 0, { import: findImports }));
+        });
+        st.ok('errors' in output);
+        // The exception is reported as the import error, so that it does not unwind through the
+        // compiler (CIPH-HYPERION-16). Error should be something like:
+        //   b.hyp:1:1: ParserError: Source "a.hyp" not found: Callback threw Error: Could not implement this interface properly...
+        st.ok(output.errors.some((error) => error.indexOf('not found: Callback threw Error: Could not implement this interface properly...') !== -1));
         st.end();
       });
 
@@ -576,6 +582,128 @@ function runTests (hypc, versionText) {
         st.end();
       });
 
+      t.test('compiling standard JSON (import callback throws)', function (st) {
+        // <0.2.1 doesn't have this
+        if (!hypc.features.importCallback) {
+          st.skip('Not supported by hypc');
+          st.end();
+          return;
+        }
+
+        const input = {
+          language: 'Hyperion',
+          settings: {
+            outputSelection: {
+              '*': {
+                '*': ['qrvm.bytecode']
+              }
+            }
+          },
+          sources: {
+            'b.hyp': {
+              content: 'import "a.hyp"; contract B is A { function g() public { f(); } }'
+            }
+          }
+        };
+
+        function findImports (path) {
+          throw new Error('Could not implement this interface properly...');
+        }
+
+        let output;
+        st.doesNotThrow(function () {
+          output = JSON.parse(hypc.compile(JSON.stringify(input), { import: findImports }));
+        });
+        // The exception is reported as the import error, so that it does not unwind through the
+        // compiler and leave it unusable (CIPH-HYPERION-16).
+        st.ok(expectError(output, 'ParserError', /^Source "a\.hyp" not found: Callback threw Error: Could not implement this interface properly\.\.\.$/));
+        st.end();
+      });
+
+      t.test('compiling standard JSON (import callback returns no object)', function (st) {
+        // <0.2.1 doesn't have this
+        if (!hypc.features.importCallback) {
+          st.skip('Not supported by hypc');
+          st.end();
+          return;
+        }
+
+        const input = {
+          language: 'Hyperion',
+          settings: {
+            outputSelection: {
+              '*': {
+                '*': ['qrvm.bytecode']
+              }
+            }
+          },
+          sources: {
+            'b.hyp': {
+              content: 'import "a.hyp"; contract B is A { function g() public { f(); } }'
+            }
+          }
+        };
+
+        function findImports (path) {
+          return undefined;
+        }
+
+        let output;
+        st.doesNotThrow(function () {
+          output = JSON.parse(hypc.compile(JSON.stringify(input), { import: findImports }));
+        });
+        st.ok(expectError(output, 'ParserError', /^Source "a\.hyp" not found: Callback returned undefined instead of an object with contents or error\.$/));
+        st.end();
+      });
+
+      t.test('compiling standard JSON (import callback returns no usable object)', function (st) {
+        // <0.2.1 doesn't have this
+        if (!hypc.features.importCallback) {
+          st.skip('Not supported by hypc');
+          st.end();
+          return;
+        }
+
+        const input = {
+          language: 'Hyperion',
+          settings: {
+            outputSelection: {
+              '*': {
+                '*': ['qrvm.bytecode']
+              }
+            }
+          },
+          sources: {
+            'b.hyp': {
+              content: 'import "a.hyp"; contract B is A { function g() public { f(); } }'
+            }
+          }
+        };
+
+        // Each result is reported as the import error, instead of leaving the compiler to say
+        // "Callback not supported." about a callback that was there.
+        const cases = [
+          { result: null, message: 'Callback returned null instead of an object with contents or error.' },
+          { result: 'contract A { }', message: 'Callback returned a string instead of an object with contents or error.' },
+          { result: ['contract A { }'], message: 'Callback returned an array instead of an object with contents or error.' },
+          { result: {}, message: 'Callback returned an object with neither contents nor error.' },
+          { result: { contents: Buffer.from('contract A { }') }, message: 'Callback returned an object as contents instead of a string.' },
+          { result: { contents: 42 }, message: 'Callback returned a number as contents instead of a string.' },
+          { result: { error: new Error('disk on fire') }, message: 'Error: disk on fire' }
+        ];
+        for (const { result, message } of cases) {
+          let output;
+          st.doesNotThrow(function () {
+            output = JSON.parse(hypc.compile(JSON.stringify(input), { import: () => result }));
+          });
+          st.ok(
+            expectError(output, 'ParserError', `^Source "a\\.hyp" not found: ${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
+            `reports: ${message}`
+          );
+        }
+        st.end();
+      });
+
       t.test('compiling standard JSON (using libraries)', function (st) {
         // <0.1.6 doesn't have this
         if (!hypc.features.multipleInputs) {
@@ -763,14 +891,37 @@ function runTests (hypc, versionText) {
         st.ok(G.length > 0);
         st.end();
       });
+
+      t.test('compiling standard JSON (input larger than the wasm stack)', function (st) {
+        // The input is handed to the compiler as a pointer to a copy in its own memory (see
+        // bindings/compile.ts). Passed as an Emscripten 'string' argument it was copied onto the
+        // wasm stack, which overflowed from about 1.3 million characters: the compilation then
+        // threw a RuntimeError, and the module instance had to be replaced.
+        const padding = `\n// ${'x'.repeat(1500000)}\n`;
+        const compileWith = (content) => JSON.parse(hypc.compile(JSON.stringify({
+          language: 'Hyperion',
+          settings: { outputSelection: { '*': { '*': ['qrvm.bytecode'] } } },
+          sources: { 'big.hyp': { content: content + padding } }
+        })));
+
+        let output = compileWith('contract C { function f() public pure returns (uint) { return 1; } }');
+        st.ok(expectNoError(output));
+        const C = getBytecodeStandard(output, 'big.hyp', 'C');
+        st.ok(typeof C === 'string');
+        st.ok(C.length > 0);
+
+        output = compileWith('contract C { this is an invalid contract }');
+        st.ok(expectError(output, 'ParserError', /expected/i), 'a syntax error in a large input is reported, not thrown');
+        st.end();
+      });
     });
   });
 
   // Only run on the latest version.
   if (versionText === 'latest' && !noRemoteVersions) {
     tape('Loading Legacy Versions', function (t) {
-      t.test('loading remote version - development snapshot', function (st) {
-        // getting the development snapshot
+      t.test('loading remote version - latest release', function (st) {
+        // getting the latest release
         st.plan(2);
         hypc.loadRemoteVersion('latest', function (err, hypcSnapshot) {
           if (err) {

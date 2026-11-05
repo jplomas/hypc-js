@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { keccak256 } from 'js-sha3';
+import { keccak256, shake256 } from 'js-sha3';
 import { isNil, isObject } from './common/helpers';
 import { LibraryAddresses, LinkReferences } from './common/types';
 
@@ -31,6 +31,25 @@ function libraryHash (fullyQualifiedLibraryName, length) {
 
 function libraryHashPlaceholder (fullyQualifiedLibraryName) {
   return `$${libraryHash(fullyQualifiedLibraryName, HASH_PLACEHOLDER_BODY_LENGTH)}$`;
+}
+
+/**
+ * Applies the compiler's address checksum to a hex address body: a letter is upper case when
+ * the matching nibble of SHAKE-256 (64 bytes) of the lower-case body is 8 or more.
+ * Mirrors `checksummedAddressBody` in hyperion's libhyputil/CommonData.cpp.
+ */
+function checksummedAddressBody (body: string): string {
+  const lower = body.toLowerCase();
+  const hash = shake256(lower, ADDRESS_HEX_LENGTH * 4);
+  return [...lower].map((c, i) => (c >= 'a' && c <= 'f' && parseInt(hash[i], 16) >= 8 ? c.toUpperCase() : c)).join('');
+}
+
+/**
+ * Accepts an all-lower-case or all-upper-case body, or a mixed-case body with a valid checksum,
+ * as the compiler does for `settings.libraries`.
+ */
+function passesAddressChecksum (body: string): boolean {
+  return body === body.toLowerCase() || body === body.toUpperCase() || body === checksummedAddressBody(body);
 }
 
 /**
@@ -123,6 +142,10 @@ function linkBytecode (bytecode: string, libraries: LibraryAddresses): string {
 
     // remove address prefix
     hexAddress = hexAddress.slice(ADDRESS_PREFIX.length);
+
+    if (!passesAddressChecksum(hexAddress)) {
+      throw new Error(`Invalid address checksum specified for ${libraryName}`);
+    }
 
     bytecode = replacePlaceholder(bytecode, libraryName, hexAddress);
     bytecode = replacePlaceholder(bytecode, libraryHashPlaceholder(libraryName), hexAddress);

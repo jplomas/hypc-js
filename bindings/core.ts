@@ -16,6 +16,7 @@ export function setupCore (hypJson) {
 
     copyFromCString: unboundCopyFromCString.bind(this, hypJson),
     copyToCString: unboundCopyToCString.bind(this, hypJson, core.alloc),
+    allocCString: unboundAllocCString.bind(this, hypJson, core.alloc),
 
     // @ts-ignore
     versionToSemver: versionToSemver(core.version())
@@ -114,7 +115,7 @@ function bindReset (hypJson) {
 /**
  * Copy to a C string.
  *
- * Allocates memory using hypc's allocator.
+ * Allocates memory using hypc's allocator and returns the address of the copy.
  *
  * After 0.6.0:
  *   The duty is on hypc-js to free these pointers. We accomplish that by calling `reset` at the end.
@@ -122,15 +123,32 @@ function bindReset (hypJson) {
  * @param hypJson The Emscripten compiled Hyperion object.
  * @param alloc The memory allocation function.
  * @param str The source string being copied to a C string.
- * @param ptr The pointer location where the C string will be set.
  */
-function unboundCopyToCString (hypJson, alloc, str, ptr) {
+function unboundAllocCString (hypJson, alloc, str) {
   const length = hypJson.lengthBytesUTF8(str);
 
   const buffer = alloc(length + 1);
+  if (!buffer) {
+    // Writing through a NULL pointer would overwrite wasm memory at address 0.
+    throw new Error(`hyperion_alloc failed to allocate ${length + 1} bytes.`);
+  }
 
   hypJson.stringToUTF8(str, buffer, length + 1);
-  hypJson.setValue(ptr, buffer, '*');
+  return buffer;
+}
+
+/**
+ * Copy to a C string, and store its address through a pointer.
+ *
+ * Allocates memory as `unboundAllocCString` does.
+ *
+ * @param hypJson The Emscripten compiled Hyperion object.
+ * @param alloc The memory allocation function.
+ * @param str The source string being copied to a C string.
+ * @param ptr The pointer location where the C string will be set.
+ */
+function unboundCopyToCString (hypJson, alloc, str, ptr) {
+  hypJson.setValue(ptr, unboundAllocCString(hypJson, alloc, str), '*');
 }
 
 /**

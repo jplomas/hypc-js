@@ -92,6 +92,53 @@ tape('SMTCheckerCallback', function (t) {
     st.end();
   });
 
+  t.test('A callback that throws is reported to the compiler', function (st) {
+    // The exception is answered as a solver error from inside the callback (CIPH-HYPERION-16); it
+    // must not unwind through the compiler.
+    let calls = 0;
+    const throwingCallback = function (query) {
+      calls++;
+      throw new Error('Solver crashed.');
+    };
+    const settings = { modelChecker: { engine: 'bmc', solvers: ['smtlib2'] } };
+    const input = { a: { content: preamble + 'contract C { function f(uint x) public pure { assert(x > 0); } }' } };
+    let output;
+    st.doesNotThrow(function () {
+      output = JSON.parse(hypc.compile(JSON.stringify({ language: 'Hyperion', sources: input, settings }), { smtSolver: throwingCallback }));
+    });
+    st.equal(calls, 1, 'the callback was asked');
+    st.ok(collectErrors(output).some((message) => message.includes('BMC analysis was not possible')), 'the query counts as unsolved');
+    st.notOk((output.errors || []).some((error) => error.severity === 'error'), 'with no error');
+    st.end();
+  });
+
+  t.test('smtCallback reports a failing solver as a string', function (st) {
+    // The compiler takes an error string, as it takes the contents; an Error object would reach
+    // it as no answer at all.
+    const smtSolver = smtchecker.smtCallback(function (query, solver) {
+      throw new Error('No SMT solver available.');
+    });
+    st.deepEqual(smtSolver('(check-sat)'), { error: 'Error: No SMT solver available.' });
+
+    const settings = { modelChecker: { engine: 'bmc', solvers: ['smtlib2'] } };
+    const input = { a: { content: preamble + 'contract C { function f(uint x) public pure { assert(x > 0); } }' } };
+    const output = JSON.parse(hypc.compile(JSON.stringify({ language: 'Hyperion', sources: input, settings }), { smtSolver }));
+    st.ok(collectErrors(output).some((message) => message.includes('BMC analysis was not possible')), 'the query counts as unsolved');
+    st.notOk((output.errors || []).some((error) => error.severity === 'error'), 'with no error');
+    st.end();
+  });
+
+  t.test('Solver output larger than the buffer is a failure', function (st) {
+    // An answer of 'sat' followed by more output than execFileSync keeps.
+    const solver = {
+      name: 'flood',
+      command: process.execPath,
+      params: ['-e', 'process.stdout.write("sat\\n" + "x".repeat(65 * 1024 * 1024))']
+    };
+    st.throws(() => smtsolver.smtSolver('(check-sat)', solver), /The solver wrote more than 67108864 bytes/);
+    st.end();
+  });
+
   t.test('Hyperion smtCheckerTests', function (st) {
     const testdir = path.resolve(__dirname, 'resources/smtChecker/');
     if (!fs.existsSync(testdir)) {

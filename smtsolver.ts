@@ -1,26 +1,33 @@
 import { sync as commandExistsSync } from 'command-exists';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as tmp from 'tmp';
 
 // Timeout in ms.
 const timeout = 10000;
+// Solver answers are short; this only bounds a runaway solver.
+const maxBuffer = 64 * 1024 * 1024;
 
 const potentialSolvers = [
   {
     name: 'z3',
     command: 'z3',
-    params: '-smt2 rlimit=20000000 rewriter.pull_cheap_ite=true fp.spacer.q3.use_qgen=true fp.spacer.mbqi=false fp.spacer.ground_pobs=false'
+    params: ['-smt2', 'rlimit=20000000', 'rewriter.pull_cheap_ite=true', 'fp.spacer.q3.use_qgen=true', 'fp.spacer.mbqi=false', 'fp.spacer.ground_pobs=false']
   },
   {
     name: 'Eldarica',
     command: 'eld',
-    params: '-horn -t:' + (timeout / 1000) // Eldarica takes timeout in seconds.
+    params: ['-horn', '-t:' + (timeout / 1000)] // Eldarica takes timeout in seconds.
+  },
+  {
+    name: 'cvc5',
+    command: 'cvc5',
+    params: ['--lang=smt2', '--tlimit=' + timeout]
   },
   {
     name: 'cvc4',
     command: 'cvc4',
-    params: '--lang=smt2 --tlimit=' + timeout
+    params: ['--lang=smt2', '--tlimit=' + timeout]
   }
 ];
 
@@ -39,19 +46,25 @@ function solve (query, solver) {
   fs.writeFileSync(tmpFile.name, query);
   let solverOutput;
   try {
-    solverOutput = execSync(
-      solver.command + ' ' + solver.params + ' ' + tmpFile.name, {
-        encoding: 'utf8',
-        maxBuffer: 1024 * 1024 * 1024,
-        stdio: 'pipe',
-        timeout // Enforce timeout on the process, since solvers can sometimes go around it.
-      }
-    ).toString();
+    // No shell: the solver gets its arguments as an array. A caller's solver configuration may
+    // still give params as one string, as before; it is split on whitespace.
+    const params = typeof solver.params === 'string' ? solver.params.split(/\s+/).filter(Boolean) : solver.params;
+    solverOutput = execFileSync(solver.command, [...params, tmpFile.name], {
+      encoding: 'utf8',
+      maxBuffer,
+      stdio: 'pipe',
+      timeout, // Enforce timeout on the process, since solvers can sometimes go around it.
+      killSignal: 'SIGKILL' // A solver can ignore SIGTERM.
+    }).toString();
   } catch (e) {
-    // execSync throws if the process times out or returns != 0.
+    // The output was cut off at maxBuffer, so even an answer at its start cannot be trusted.
+    if (e.code === 'ENOBUFS') {
+      throw new Error(`Failed to solve SMT query. The solver wrote more than ${maxBuffer} bytes.`);
+    }
+    // execFileSync throws if the process times out or returns != 0.
     // The latter might happen with z3 if the query asks for a model
     // for an UNSAT formula. We can still use stdout.
-    solverOutput = e.stdout.toString();
+    solverOutput = (e.stdout || '').toString();
     if (
       !solverOutput.startsWith('sat') &&
       !solverOutput.startsWith('unsat') &&
@@ -61,9 +74,10 @@ function solve (query, solver) {
     ) {
       throw new Error('Failed to solve SMT query. ' + e.toString());
     }
+  } finally {
+    // Trigger early manual cleanup
+    tmpFile.removeCallback();
   }
-  // Trigger early manual cleanup
-  tmpFile.removeCallback();
   return solverOutput;
 }
 

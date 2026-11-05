@@ -23,6 +23,11 @@ const potentialSolvers = [
     name: 'cvc5',
     command: 'cvc5',
     params: ['--lang=smt2', '--tlimit=' + timeout]
+  },
+  {
+    name: 'cvc4',
+    command: 'cvc4',
+    params: ['--lang=smt2', '--tlimit=' + timeout]
   }
 ];
 
@@ -52,6 +57,10 @@ function solve (query, solver) {
       killSignal: 'SIGKILL' // A solver can ignore SIGTERM.
     }).toString();
   } catch (e) {
+    // The output was cut off at maxBuffer, so even an answer at its start cannot be trusted.
+    if (e.code === 'ENOBUFS') {
+      throw new Error(`Failed to solve SMT query. The solver wrote more than ${maxBuffer} bytes.`);
+    }
     // execFileSync throws if the process times out or returns != 0.
     // The latter might happen with z3 if the query asks for a model
     // for an UNSAT formula. We can still use stdout.

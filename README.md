@@ -68,9 +68,10 @@ as a string.  It cannot be used together with callback-based, asynchronous,
 filesystem access. A workaround is to collect the names of dependencies, return
 an error, and keep re-running the compiler until all of them are resolved.
 
-A callback that throws, or that returns something other than an object, does not abort the
-compilation: the compiler reports it as the import error, for example
-``Source "a.hyp" not found: Callback threw Error: ENOENT: no such file or directory``.
+A callback that throws, or that returns anything but an object with a string ``contents`` or a
+string ``error``, does not abort the compilation: the compiler reports it as the import error, for
+example ``Source "a.hyp" not found: Callback threw Error: ENOENT: no such file or directory``. An
+``error`` that is not a string, such as an ``Error`` object, is reported as the error it describes.
 
 #### Example usage without the import callback
 
@@ -160,7 +161,7 @@ return either an error or the result from the solver.  A default
 ``smtchecker.js`` which exports the ``smtCallback`` function that takes 1) a
 function that takes queries and returns the solving result, and 2) a solver
 configuration object. The module ``smtsolver.js`` has a few predefined solver
-configurations, and relies on Z3, Eldarica or cvc5 being installed locally.  It
+configurations, and relies on Z3, Eldarica, cvc5 or cvc4 being installed locally.  It
 exports the list of locally found solvers and a function that invokes a given
 solver.
 
@@ -209,7 +210,9 @@ so the module instance the exception unwound through cannot compile again, and t
 `compile` loads a fresh instance of the module, or, where none can be loaded, goes on with the same
 instance once the compiler has discarded the abandoned compilation. This needs nothing from the
 caller for the bundled compiler and for one from `loadRemoteVersion`; for a module given to
-`setupMethods`, see [Using a Legacy Version](#using-a-legacy-version).
+`setupMethods`, see [Using a Legacy Version](#using-a-legacy-version). Going on with the same
+instance keeps the memory of the abandoned compilation allocated, since the compiler cannot free
+what the exception interrupted; a fresh instance does not.
 
 #### Low-level API
 
@@ -254,23 +257,27 @@ from the module's file if `require` loaded it. Otherwise pass a function that re
 module as the second argument, `hypc.setupMethods(hypjson, loadHypjson)`. Without one, as in a
 browser, the same instance goes on after `hyperion_reset()` has discarded the abandoned
 compilation, which compilers from 0.3.0 on support; with an older compiler, or after a WebAssembly
-trap, the next `compile` returns an error that says the module cannot be used again.
+trap, the next `compile` returns an error that says the module cannot be used again. Each
+compilation the same instance goes on from leaves its memory allocated in the instance, so a
+long-lived page that sees `compile` throw more than rarely should load a fresh module itself.
 
-### Using the Latest Development Snapshot
+### Using the Latest Release
 
-By default, the npm version is only created for releases. This prevents people from deploying contracts with non-release versions because they are less stable and harder to verify. If you would like to use the latest development snapshot (at your own risk!), you may use the following example code.
+`loadRemoteVersion('latest', …)` loads the latest release in the
+[release list](https://binaries.theqrl.org/bin/list.json), which can be newer than the compiler that
+your installed copy of this package bundles.
 
 ```javascript
 var hypc = require('@theqrl/hypc');
 
-// getting the development snapshot
-hypc.loadRemoteVersion('latest', function(err, hypcSnapshot) {
+// getting the latest release
+hypc.loadRemoteVersion('latest', function(err, hypcLatest) {
   if (err) {
     // An error was encountered, display and quit
   } else {
-    // NOTE: Use `hypcSnapshot` here with the same interface `hypc` has
+    // NOTE: Use `hypcLatest` here with the same interface `hypc` has
     // For example:
-    const output = hypcSnapshot.compile(/* ... */)
+    const output = hypcLatest.compile(/* ... */)
   }
 });
 ```
@@ -280,7 +287,7 @@ the commit hash, such as `v0.2.0+commit.e36a0aea`. The [publicly available relea
 has every version.
 
 ```javascript
-hypc.loadRemoteVersion('v0.2.0+commit.e36a0aea', function(err, hypcSnapshot) { /* ... */ });
+hypc.loadRemoteVersion('v0.2.0+commit.e36a0aea', function(err, hypcRemote) { /* ... */ });
 ```
 
 `loadRemoteVersion` looks the version up in that list and downloads the build from

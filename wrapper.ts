@@ -63,7 +63,9 @@ function wrapper (hypjson, reload = reloaderFor(hypjson)) {
     // No fresh instance can be loaded here, as in a browser or a bundle. A JavaScript exception
     // leaves the instance's memory intact, and hyperion_reset() of compilers from 0.3.0 on
     // discards the abandoned compilation's state, so the same instance can go on; whether this
-    // compiler does that shows in its next output (see compileMethod). After a trap (a
+    // compiler does that shows in its next output (see compileMethod). What the abandoned
+    // compilation allocated stays allocated, since its destructors never ran and cannot be run
+    // now, which is why a fresh instance is preferred wherever one can be loaded. After a trap (a
     // WebAssembly.RuntimeError, which is also what an Emscripten abort throws) the memory cannot
     // be trusted.
     if (typeof WebAssembly !== 'undefined' && bindings.poisonedBy instanceof WebAssembly.RuntimeError) {

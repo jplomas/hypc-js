@@ -1,3 +1,5 @@
+import { describeException } from './common/helpers';
+
 // This function checks the standard JSON output for auxiliaryInputRequested,
 // where smtlib2queries represent the queries created by the SMTChecker.
 // The function runs an SMT solver on each query and adjusts the input for
@@ -31,7 +33,8 @@ function smtCallback (solverFunction, solver?: any) {
       const result = solverFunction(query, solver);
       return { contents: result };
     } catch (err) {
-      return { error: err };
+      // The compiler takes the error as a string, like the contents.
+      return { error: describeException(err) };
     }
   };
 }

@@ -1,6 +1,6 @@
 import assert from 'assert';
 
-import { describeException, isNil } from '../common/helpers';
+import { describeException, isNil, isObject } from '../common/helpers';
 import { bindHypcMethod } from './helpers';
 
 /**
@@ -191,22 +191,13 @@ function wrapCallbackWithKind (coreBindings, callback) {
 
     // The compiler calls this from inside its wasm frames. An exception thrown here would unwind
     // through them without running the compiler's cleanup and leave the module instance unusable
-    // (see `guarded`), so a callback that throws, or returns no object, is answered with an error
-    // instead, which the compiler reports like any other failed import or query.
+    // (see `guarded`), so a callback that throws, or returns no usable object, is answered with an
+    // error instead, which the compiler reports like any other failed import or query.
     let contentsString;
     let errorString;
     try {
       const result = callback(coreBindings.copyFromCString(kind), coreBindings.copyFromCString(data));
-      if (isNil(result)) {
-        errorString = `Callback returned ${result} instead of an object with contents or error.`;
-      } else {
-        if (typeof result.contents === 'string') {
-          contentsString = result.contents;
-        }
-        if (typeof result.error === 'string') {
-          errorString = result.error;
-        }
-      }
+      ({ contents: contentsString, error: errorString } = callbackResultStrings(result));
     } catch (e) {
       contentsString = undefined;
       errorString = `Callback threw ${describeException(e)}`;
@@ -219,6 +210,47 @@ function wrapCallbackWithKind (coreBindings, callback) {
       coreBindings.copyToCString(errorString, error);
     }
   };
+}
+
+/**
+ * The strings to hand the compiler for what a callback returned: its `contents` and `error` where
+ * they are strings, otherwise an error that says what was returned. The compiler must get one of
+ * the two for every result: with neither, it reports "Callback not supported.", which hides that
+ * a callback was there and answered badly. An `error` that is not a string, such as an Error
+ * object, is reported as the error it describes.
+ *
+ * @param result What the callback returned.
+ */
+function callbackResultStrings (result): { contents?: string, error?: string } {
+  if (isNil(result) || !isObject(result)) {
+    return { error: `Callback returned ${describeValue(result)} instead of an object with contents or error.` };
+  }
+  const strings: { contents?: string, error?: string } = {};
+  if (typeof result.contents === 'string') {
+    strings.contents = result.contents;
+  }
+  if (typeof result.error === 'string') {
+    strings.error = result.error;
+  } else if (!isNil(result.error)) {
+    strings.error = describeException(result.error);
+  }
+  if (strings.contents === undefined && strings.error === undefined) {
+    strings.error = isNil(result.contents)
+      ? 'Callback returned an object with neither contents nor error.'
+      : `Callback returned ${describeValue(result.contents)} as contents instead of a string.`;
+  }
+  return strings;
+}
+
+/**
+ * Names the kind of a value for an error message: `null`, `undefined`, `an array`, `a string`...
+ *
+ * @param value
+ */
+function describeValue (value): string {
+  if (isNil(value)) return String(value);
+  if (Array.isArray(value)) return 'an array';
+  return `${typeof value === 'object' ? 'an' : 'a'} ${typeof value}`;
 }
 
 // calls compile() with args || cb

@@ -140,8 +140,14 @@ function toFormattedJson (input) {
   return JSON.stringify(input, null, options.prettyJson ? 4 : 0);
 }
 
+// Input that is not valid JSON is returned as it is, so that the compiler reports it.
 function reformatJsonIfRequested (inputJson) {
-  return (options.prettyJson ? toFormattedJson(JSON.parse(inputJson)) : inputJson);
+  if (!options.prettyJson) { return inputJson; }
+  try {
+    return toFormattedJson(JSON.parse(inputJson));
+  } catch (e) {
+    return inputJson;
+  }
 }
 
 // Diagnostics go to stderr, so that stdout carries only the compiler output.

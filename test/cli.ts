@@ -283,6 +283,19 @@ tape('CLI', function (t) {
     });
   });
 
+  t.test('standard json --pretty-json with input that is not JSON', function (st) {
+    const spt = spawn(st, './hypc.js --standard-json --pretty-json');
+    spt.stdin.setEncoding('utf-8');
+    spt.stdin.write('{not json');
+    spt.stdin.end();
+    spt.stdin.on('finish', function () {
+      spt.stderr.empty();
+      spt.stdout.match(/"type": "JSONError"/);
+      spt.succeeds();
+      spt.end();
+    });
+  });
+
   t.test('standard json base path', function (st) {
     const input = {
       language: 'Hyperion',

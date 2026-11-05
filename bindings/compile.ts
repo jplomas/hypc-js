@@ -117,7 +117,7 @@ function bindCompileJsonCallback (hypJson, coreBindings, guard) {
   if (isNil(compileInternal)) return null;
 
   return function (input, optimize, readCallback) {
-    return runWithCallbacks(hypJson, coreBindings, readCallback, compileInternal, [input, optimize]);
+    return runWithCallbacks(hypJson, coreBindings, readCallback, compileInternal, () => [input, optimize]);
   };
 }
 
@@ -162,18 +162,17 @@ function bindCompileStandard (hypJson, coreBindings, guard) {
 
   if (!isNil(compileInternal)) {
     boundFunctionStandard = function (input, readCallback) {
-      return runWithCallbacks(hypJson, coreBindings, readCallback, compileInternal, [input]);
+      return runWithCallbacks(hypJson, coreBindings, readCallback, compileInternal, () => [input]);
     };
   }
 
   if (!isNil(boundFunctionHyperion)) {
     boundFunctionStandard = function (input, callbacks) {
-      // Checked before the copy below, which only the reset() after a compilation frees.
-      assertCallbacks(callbacks);
-      // Copied before the guarded call: a failed allocation leaves nothing behind in the
+      // The copy is made right before the guarded call, once the callback is set up, so that
+      // nothing that can fail runs between the copy and the compilation whose reset() frees it.
+      // It is still outside the guarded call: a failed allocation leaves nothing behind in the
       // compiler, so it must not mark the instance poisoned.
-      const inputPointer = coreBindings.allocCString(input);
-      return runWithCallbacks(hypJson, coreBindings, callbacks, boundFunctionHyperion, [inputPointer]);
+      return runWithCallbacks(hypJson, coreBindings, callbacks, boundFunctionHyperion, () => [coreBindings.allocCString(input)]);
     };
   }
 
@@ -256,20 +255,21 @@ function describeValue (value): string {
 }
 
 /**
- * Checks that the callbacks of a compilation, if any were given, are an object.
+ * Runs a compile method with the given callbacks installed, and frees what the compilation
+ * allocated afterwards.
  *
- * @param callbacks The callbacks argument of a compile method.
+ * @param hypJson The Emscripten compiled Hyperion object.
+ * @param coreBindings The core bound Hyperion methods.
+ * @param callbacks The callbacks object (or, before 0.6.0, the import callback) given by the caller.
+ * @param compile The guarded compile method.
+ * @param prepareArgs Returns the arguments that precede the callback and its context. It runs once
+ *   the callback is installed, right before the call, so that an argument allocated in the
+ *   compiler for the call cannot be left behind by a failure to install the callback.
  */
-function assertCallbacks (callbacks) {
+function runWithCallbacks (hypJson, coreBindings, callbacks, compile, prepareArgs) {
   if (callbacks) {
     assert(typeof callbacks === 'object', 'Invalid callback object specified.');
-  }
-}
-
-// calls compile() with args || cb
-function runWithCallbacks (hypJson, coreBindings, callbacks, compile, args) {
-  assertCallbacks(callbacks);
-  if (!callbacks) {
+  } else {
     callbacks = {};
   }
 
@@ -308,11 +308,8 @@ function runWithCallbacks (hypJson, coreBindings, callbacks, compile, args) {
   const cb = coreBindings.addFunction(singleCallback, 'viiiii');
   let output;
   try {
-    args.push(cb);
-    // Callback context.
-    args.push(null);
-
-    output = compile(...args);
+    // The callback, then its context.
+    output = compile(...prepareArgs(), cb, null);
   } finally {
     coreBindings.removeFunction(cb);
   }

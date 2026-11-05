@@ -60,8 +60,15 @@ The compiler must be released first; every later step verifies against it.
 
 ## Verifying a release
 
+Use GitHub CLI 2.102.0 or later. Versions 2.51.0 to 2.101.0 accept an attestation from any workflow
+whose path begins with the `--signer-workflow` value (GHSA-wjmr-j3rp-mh2g).
+
 ```bash
 npm audit signatures                                                    # in a project that depends on @theqrl/hypc
-gh attestation verify theqrl-hypc-X.Y.Z.tgz --repo theQRL/hypc-js        # tarball from the GitHub release
-gh attestation verify node_modules/@theqrl/hypc/hypjson.js --repo theQRL/hyperion   # compiler (hyperion releases after 0.2.0)
+# tarball from the GitHub release
+gh attestation verify theqrl-hypc-X.Y.Z.tgz --repo theQRL/hypc-js \
+  --signer-workflow theQRL/hypc-js/.github/workflows/release.yml
+# compiler (hyperion releases after 0.2.0)
+gh attestation verify node_modules/@theqrl/hypc/hypjson.js --repo theQRL/hyperion \
+  --signer-workflow theQRL/hyperion/.github/workflows/ci.yml
 ```

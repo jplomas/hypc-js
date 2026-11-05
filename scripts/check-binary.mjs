@@ -7,7 +7,7 @@
 //   4. its build provenance attestation verifies (releases after 0.2.0, which predates attestations)
 // Usage: node scripts/check-binary.mjs [--list path/to/hypc-bin/bin/list.json]
 //   Without --list the live https://binaries.theqrl.org/bin/list.json is used.
-//   Needs the GitHub CLI (`gh`); in CI set GH_TOKEN.
+//   Needs the GitHub CLI (`gh`), 2.102.0 or later for step 4; in CI set GH_TOKEN.
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -19,8 +19,15 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(join(root, 'package.json'));
 const { keccak256 } = require('js-sha3');
+const semver = require('semver');
 const HYPERION = 'theQRL/hyperion';
+// The only workflow that signs hyperion release assets; an attestation from any other workflow in
+// the repository is rejected.
+const HYPERION_RELEASE_WORKFLOW = `${HYPERION}/.github/workflows/ci.yml`;
 const LAST_UNATTESTED = '0.2.0';
+// GitHub CLI 2.51.0 to 2.101.0 match --signer-workflow as a prefix, so an attestation from another
+// workflow whose path begins with the pinned one passes (GHSA-wjmr-j3rp-mh2g).
+const MIN_GH_VERSION = '2.102.0';
 
 const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 let failed = false;
@@ -70,9 +77,14 @@ try {
   }
   if (cmp(version, LAST_UNATTESTED) <= 0) console.log(`skip build provenance: ${version} predates attested hyperion releases`);
   else {
-    const att = spawnSync('gh', ['attestation', 'verify', file, '--repo', HYPERION], { encoding: 'utf8' });
-    if (att.status !== 0) fail(`build provenance attestation does not verify: ${(att.stderr || att.stdout).trim()}`);
-    else ok(`build provenance attestation verifies against ${HYPERION}`);
+    // Keep any pre-release suffix: semver sorts 2.102.0-rc.1 before 2.102.0.
+    const gh = /^gh version (\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/.exec(spawnSync('gh', ['--version'], { encoding: 'utf8' }).stdout || '')?.[1];
+    if (!semver.valid(gh) || semver.lt(gh, MIN_GH_VERSION)) fail(`gh attestation verify needs GitHub CLI ${MIN_GH_VERSION} or later, found ${gh || 'none'}: older versions accept an attestation from any workflow whose path begins with the pinned one (GHSA-wjmr-j3rp-mh2g)`);
+    else {
+      const att = spawnSync('gh', ['attestation', 'verify', file, '--repo', HYPERION, '--signer-workflow', HYPERION_RELEASE_WORKFLOW], { encoding: 'utf8' });
+      if (att.status !== 0) fail(`build provenance attestation does not verify: ${(att.stderr || att.stdout).trim()}`);
+      else ok(`build provenance attestation verifies against ${HYPERION_RELEASE_WORKFLOW}`);
+    }
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

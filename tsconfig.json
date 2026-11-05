@@ -2,13 +2,17 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "commonjs",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "outDir": "./dist",
     "forceConsistentCasingInFileNames": true,
     "allowJs": true,
     "strict": false,
-    "noImplicitAny": false
+    "noImplicitAny": false,
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "**/*.js",

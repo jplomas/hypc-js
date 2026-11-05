@@ -77,7 +77,7 @@ tape('SMTCheckerWithSolver', function (t) {
     const input = {
       language: 'Hyperion',
       sources: source,
-      settings: settings
+      settings
     };
 
     const output = JSON.parse(hypc.compile(JSON.stringify(input)));

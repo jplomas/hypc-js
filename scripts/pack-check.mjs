@@ -39,7 +39,7 @@ if (process.argv.includes('--update-manifest')) {
   console.log(`wrote ${manifestPath} (${files.length} files)`);
 } else {
   const want = readFileSync(manifestPath, 'utf8').trim().split('\n');
-  const extra = files.filter((f) => !want.includes(f)), missing = want.filter((f) => !files.includes(f));
+  const extra = files.filter((f) => !want.includes(f)); const missing = want.filter((f) => !files.includes(f));
   if (extra.length || missing.length) {
     console.error(`::error::tarball contents changed: +[${extra.join(', ')}] -[${missing.join(', ')}]; review, then run with --update-manifest`);
     failed = true;

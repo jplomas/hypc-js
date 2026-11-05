@@ -71,7 +71,7 @@ tape('SMTCheckerCallback', function (t) {
     const inputJSON = JSON.stringify({
       language: 'Hyperion',
       sources: input,
-      settings: settings
+      settings
     });
 
     const tests = [
@@ -160,7 +160,7 @@ tape('SMTCheckerCallback', function (t) {
         expectations: expected,
         hyperion: { test: { content: preamble + source } },
         ignoreCex: source.includes('// SMTIgnoreCex: yes'),
-        engine: engine
+        engine
       };
     }
 
@@ -180,7 +180,7 @@ tape('SMTCheckerCallback', function (t) {
       const engine = test.engine !== undefined ? test.engine : 'all';
       settings = {
         modelChecker: {
-          engine: engine,
+          engine,
           solvers: [
             'smtlib2'
           ]
@@ -190,7 +190,7 @@ tape('SMTCheckerCallback', function (t) {
         JSON.stringify({
           language: 'Hyperion',
           sources: test.hyperion,
-          settings: settings
+          settings
         }),
         // This test needs z3 specifically.
         { smtSolver: smtchecker.smtCallback(smtsolver.smtSolver, z3HornSolvers[0]) }

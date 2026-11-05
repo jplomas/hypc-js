@@ -1,4 +1,3 @@
-import MemoryStream from 'memorystream';
 import { https } from 'follow-redirects';
 
 import { formatFatalError } from './formatters';
@@ -41,18 +40,18 @@ function wrapper (hypjson) {
 }
 
 function loadRemoteVersion (versionString, callback) {
-  const memoryStream = new MemoryStream(null, { readable: false });
   const url = `https://binaries.theqrl.org/bin/hypjson-${versionString}.js`;
 
   https.get(url, response => {
     if (response.statusCode !== 200) {
       callback(new Error(`Error retrieving binary: ${response.statusMessage}`));
     } else {
-      response.pipe(memoryStream);
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
       response.on('end', () => {
         // Based on the require-from-string package.
         const hypjson = new Module();
-        hypjson._compile(memoryStream.toString(), `hypjson-${versionString}.js`);
+        hypjson._compile(Buffer.concat(chunks).toString(), `hypjson-${versionString}.js`);
 
         if (module.parent && module.parent.children) {
           // Make sure the module is plugged into the hierarchy correctly to have parent
@@ -101,13 +100,13 @@ function compileStandardWrapper (compile, inputRaw, readCallback) {
 
   // Try to wrap around old versions
   if (!isNil(compile.compileJsonCallback)) {
-    const inputJson = JSON.stringify({ sources: sources });
+    const inputJson = JSON.stringify({ sources });
     const output = compile.compileJsonCallback(inputJson, optimize, readCallback);
     return translateOutput(output, libraries);
   }
 
   if (!isNil(compile.compileJsonMulti)) {
-    const output = compile.compileJsonMulti(JSON.stringify({ sources: sources }), optimize);
+    const output = compile.compileJsonMulti(JSON.stringify({ sources }), optimize);
     return translateOutput(output, libraries);
   }
 

@@ -29,7 +29,7 @@ const LAST_UNATTESTED = '0.2.0';
 // workflow whose path begins with the pinned one passes (GHSA-wjmr-j3rp-mh2g).
 const MIN_GH_VERSION = '2.102.0';
 
-const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
+const cmp = (a, b) => { const x = a.split('.').map(Number); const y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 let failed = false;
 const fail = (m) => { console.error(`::error::${m}`); failed = true; };
 const ok = (m) => console.log(`ok   ${m}`);

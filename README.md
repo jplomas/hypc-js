@@ -32,6 +32,11 @@ Use the ``--base-path`` and ``--include-path`` options to describe the layout of
 ``--base-path`` represents the root of your own source tree while ``--include-path`` allows you to
 specify extra locations containing external code (e.g. libraries installed with a package manager).
 
+As in `hypc`, the import callback only reads files inside the base path (the working directory
+when ``--base-path`` is not given), the include paths and the directories of the files given on
+the command line. Symbolic links are resolved first. Any other import fails with
+`File outside of allowed directories.`
+
 Note: ensure that all the files you specify on the command line are located inside the base path or
 one of the include paths.
 The compiler refers to files from outside of these directories using absolute paths.
@@ -62,6 +67,10 @@ This callback receives a path and must synchronously return either an error or t
 as a string.  It cannot be used together with callback-based, asynchronous,
 filesystem access. A workaround is to collect the names of dependencies, return
 an error, and keep re-running the compiler until all of them are resolved.
+
+A callback that throws, or that returns something other than an object, does not abort the
+compilation: the compiler reports it as the import error, for example
+``Source "a.hyp" not found: Callback threw Error: ENOENT: no such file or directory``.
 
 #### Example usage without the import callback
 
@@ -192,6 +201,16 @@ var output = JSON.parse(
 The assertion is clearly false, and an ``assertion failure`` warning
 should be returned, together with a counterexample.
 
+#### When an exception unwinds through the compiler
+
+`compile` throws when a JavaScript exception unwinds through the compiler itself, for example the
+`RangeError` of a stack overflow on deeply nested source. The compiler's cleanup does not run then,
+so the module instance the exception unwound through cannot compile again, and the next call to
+`compile` loads a fresh instance of the module, or, where none can be loaded, goes on with the same
+instance once the compiler has discarded the abandoned compilation. This needs nothing from the
+caller for the bundled compiler and for one from `loadRemoteVersion`; for a module given to
+`setupMethods`, see [Using a Legacy Version](#using-a-legacy-version).
+
 #### Low-level API
 
 The low-level API is as follows:
@@ -230,6 +249,13 @@ In order to compile contracts using a specific version of Hyperion, the `hypc.lo
 You can also load the "binary" manually and use `setupMethods` to create the familiar wrapper functions described above:
 `var hypc = hypc.setupMethods(require("/my/local/hypjson.js"))`.
 
+When an exception unwinds through such a module (see above), `setupMethods` loads a fresh instance
+from the module's file if `require` loaded it. Otherwise pass a function that returns a fresh
+module as the second argument, `hypc.setupMethods(hypjson, loadHypjson)`. Without one, as in a
+browser, the same instance goes on after `hyperion_reset()` has discarded the abandoned
+compilation, which compilers from 0.3.0 on support; with an older compiler, or after a WebAssembly
+trap, the next `compile` returns an error that says the module cannot be used again.
+
 ### Using the Latest Development Snapshot
 
 By default, the npm version is only created for releases. This prevents people from deploying contracts with non-release versions because they are less stable and harder to verify. If you would like to use the latest development snapshot (at your own risk!), you may use the following example code.
@@ -249,13 +275,19 @@ hypc.loadRemoteVersion('latest', function(err, hypcSnapshot) {
 });
 ```
 
-The version **must** be in the long format.
-Thus, if you would like to use version `v0.8.17` you need to include the commit hash of the release.
-You can extract the long version string for each version from the [publicly available release list](https://binaries.theqrl.org/bin/list.json).
+The version is `latest`, a release such as `0.2.0`, or a build in the long format, which includes
+the commit hash, such as `v0.2.0+commit.e36a0aea`. The [publicly available release list](https://binaries.theqrl.org/bin/list.json)
+has every version.
 
 ```javascript
-hypc.loadRemoteVersion('v0.8.17+commit.8df45f5f', function(err, hypcSnapshot) { /* ... */ });
+hypc.loadRemoteVersion('v0.2.0+commit.e36a0aea', function(err, hypcSnapshot) { /* ... */ });
 ```
+
+`loadRemoteVersion` looks the version up in that list and downloads the build from
+`binaries.theqrl.org`. It runs the build only if its keccak256 and sha256 match the list, and
+otherwise passes an error to the callback. It follows redirects only to `https` URLs on the same
+host, and stops reading a build larger than 64 MiB. A build that fails to load also reaches the
+callback as an error.
 
 ### Linking Bytecode
 
@@ -270,6 +302,9 @@ var linker = require('@theqrl/hypc/linker');
 
 bytecode = linker.linkBytecode(bytecode, { MyLibrary: 'Q123456...' });
 ```
+
+An address is `Q` followed by 128 hex digits. As in the compiler's `settings.libraries`, an address
+in mixed case must carry the address checksum; one in all lower case or all upper case does not.
 
 As of Hyperion 0.4.11 the compiler supports [standard JSON input and output](https://theqrl.org) which outputs a _link references_ map. This gives a map of library names to offsets in the bytecode to replace the addresses at. It also doesn't have the limitation on library file and contract name lengths.
 

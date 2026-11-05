@@ -4,12 +4,19 @@ import { setupCompile } from './compile';
 
 export default function setupBindings (hypJson) {
   const coreBindings = setupCore(hypJson);
-  const compileBindings = setupCompile(hypJson, coreBindings);
-  const methodFlags = getSupportedMethods(hypJson);
-
-  return {
-    methodFlags,
+  const bindings = {
+    methodFlags: getSupportedMethods(hypJson),
     coreBindings,
-    compileBindings
+    compileBindings: null,
+    // Set, with the exception, once a JavaScript exception has unwound through the compiler's wasm
+    // frames. This module instance cannot compile after that; see `guarded` in ./compile.ts.
+    poisoned: false,
+    poisonedBy: undefined
   };
+  bindings.compileBindings = setupCompile(hypJson, coreBindings, (e) => {
+    bindings.poisoned = true;
+    bindings.poisonedBy = e;
+  });
+
+  return bindings;
 }

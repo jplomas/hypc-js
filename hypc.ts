@@ -16,11 +16,10 @@ process.removeAllListeners('uncaughtException');
 
 const program: any = new commander.Command();
 const commanderParseInt = function (value) {
-  const parsedValue = parseInt(value, 10);
-  if (isNaN(parsedValue)) {
+  if (!/^\d+$/.test(value)) {
     throw new commander.InvalidArgumentError('Not a valid integer.');
   }
-  return parsedValue;
+  return parseInt(value, 10);
 };
 
 program.name('hypcjs');
@@ -59,6 +58,28 @@ function abort (msg) {
   process.exit(1);
 }
 
+function realPathIfExists (filePath) {
+  try {
+    return fs.realpathSync(filePath);
+  } catch (e) {
+    return path.resolve(filePath);
+  }
+}
+
+// As in hypc, imports may only be read from the base path (the working directory by default),
+// the include paths and the directories of the files given on the command line. Symlinks are
+// resolved before the check, so a link cannot point outside these directories.
+const allowedDirectories = [options.basePath || '.']
+  .concat(options.includePath || [], files.map((file) => path.dirname(file)))
+  .map(realPathIfExists);
+
+function isInsideAllowedDirectory (filePath) {
+  return allowedDirectories.some((directory) => {
+    const relativePath = path.relative(directory, filePath);
+    return relativePath === '' || (relativePath.split(path.sep)[0] !== '..' && !path.isAbsolute(relativePath));
+  });
+}
+
 function readFileCallback (sourcePath) {
   const prefixes = [options.basePath ? options.basePath : ''].concat(
     options.includePath ? options.includePath : []
@@ -67,6 +88,9 @@ function readFileCallback (sourcePath) {
     const prefixedSourcePath = (prefix ? prefix + '/' : '') + sourcePath;
 
     if (fs.existsSync(prefixedSourcePath)) {
+      if (!isInsideAllowedDirectory(fs.realpathSync(prefixedSourcePath))) {
+        return { error: 'File outside of allowed directories.' };
+      }
       try {
         return { contents: fs.readFileSync(prefixedSourcePath).toString('utf8') };
       } catch (e) {
@@ -113,11 +137,16 @@ function makeSourcePathRelativeIfPossible (sourcePath) {
 }
 
 function toFormattedJson (input) {
-  return JSON.stringify(input, null, program.prettyJson ? 4 : 0);
+  return JSON.stringify(input, null, options.prettyJson ? 4 : 0);
 }
 
 function reformatJsonIfRequested (inputJson) {
-  return (program.prettyJson ? toFormattedJson(JSON.parse(inputJson)) : inputJson);
+  return (options.prettyJson ? toFormattedJson(JSON.parse(inputJson)) : inputJson);
+}
+
+// Diagnostics go to stderr, so that stdout carries only the compiler output.
+function verbose (message) {
+  if (options.verbose) { console.error(message); }
 }
 
 let callbacks;
@@ -125,16 +154,16 @@ if (options.basePath || !options.standardJson) { callbacks = { import: readFileC
 
 if (options.standardJson) {
   const input = fs.readFileSync(process.stdin.fd).toString('utf8');
-  if (program.verbose) { console.log('>>> Compiling:\n' + reformatJsonIfRequested(input) + '\n'); }
+  verbose('>>> Compiling:\n' + reformatJsonIfRequested(input) + '\n');
   let output = reformatJsonIfRequested(hypc.compile(input, callbacks));
 
   try {
     if (smtsolver.availableSolvers.length === 0) {
-      console.log('>>> Cannot retry compilation with SMT because there are no SMT solvers available.');
+      verbose('>>> Cannot retry compilation with SMT because there are no SMT solvers available.');
     } else {
       const inputJSON = smtchecker.handleSMTQueries(JSON.parse(input), JSON.parse(output), smtsolver.smtSolver, smtsolver.availableSolvers[0]);
       if (inputJSON) {
-        if (program.verbose) { console.log('>>> Retrying compilation with SMT:\n' + toFormattedJson(inputJSON) + '\n'); }
+        verbose('>>> Retrying compilation with SMT:\n' + toFormattedJson(inputJSON) + '\n');
         output = reformatJsonIfRequested(hypc.compile(JSON.stringify(inputJSON), callbacks));
       }
     }
@@ -154,7 +183,7 @@ if (options.standardJson) {
     output = toFormattedJson(outputJSON);
   }
 
-  if (program.verbose) { console.log('>>> Compilation result:'); }
+  verbose('>>> Compilation result:');
   console.log(output);
   process.exit(0);
 } else if (files.length === 0) {
@@ -203,7 +232,7 @@ const cliInput = {
   },
   sources
 };
-if (program.verbose) { console.log('>>> Compiling:\n' + toFormattedJson(cliInput) + '\n'); }
+verbose('>>> Compiling:\n' + toFormattedJson(cliInput) + '\n');
 const output = JSON.parse(hypc.compile(JSON.stringify(cliInput), callbacks));
 
 let hasError = false;
@@ -226,17 +255,25 @@ fs.mkdirSync(destination, { recursive: true });
 
 function writeFile (file, content) {
   file = path.join(destination, file);
-  fs.writeFile(file, content, function (err) {
-    if (err) {
-      console.error('Failed to write ' + file + ': ' + err);
-    }
-  });
+  try {
+    fs.writeFileSync(file, content);
+  } catch (err) {
+    console.error('Failed to write ' + file + ': ' + err);
+  }
 }
+
+// Output names replace ':', '.', '/' and '\' with '_', so different contracts can map to one name.
+const outputNames = new Map();
 
 for (const fileName in output.contracts) {
   for (const contractName in output.contracts[fileName]) {
     let contractFileName = fileName + ':' + contractName;
     contractFileName = contractFileName.replace(/[:./\\]/g, '_');
+    const previous = outputNames.get(contractFileName);
+    if (previous) {
+      console.error(`Warning: ${previous} and ${fileName}:${contractName} both write ${contractFileName}; the output of ${fileName}:${contractName} replaces the other.`);
+    }
+    outputNames.set(contractFileName, `${fileName}:${contractName}`);
 
     if (options.bin) {
       writeFile(contractFileName + '.bin', output.contracts[fileName][contractName].qrvm.bytecode.object);

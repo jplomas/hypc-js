@@ -6,6 +6,8 @@ import('./compiler');
 import('./smtcallback');
 import('./smtchecker');
 import('./abi');
+import('./remote');
+import('./recovery');
 
 // The CLI doesn't support Node 4
 if (semver.gte(process.version, '5.0.0')) {

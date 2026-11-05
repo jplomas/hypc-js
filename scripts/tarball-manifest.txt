@@ -5,9 +5,6 @@ bindings/compile.js
 bindings/core.js
 bindings/helpers.js
 bindings/index.js
-build/clean.js
-build/pack-publish-block.js
-build/postbuild.js
 common/helpers.js
 common/types.js
 downloadCurrentVersion.js
@@ -19,16 +16,6 @@ linker.js
 package.json
 smtchecker.js
 smtsolver.js
-test/abi.js
-test/cli.js
-test/compiler.js
-test/index.js
-test/linker.js
-test/resources/fixtureAsmJson.json
-test/smtcallback.js
-test/smtchecker.js
-test/translate.js
 translate.js
-tsconfig.json
 verifyVersion.js
 wrapper.js

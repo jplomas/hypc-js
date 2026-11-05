@@ -168,6 +168,8 @@ function bindCompileStandard (hypJson, coreBindings, guard) {
 
   if (!isNil(boundFunctionHyperion)) {
     boundFunctionStandard = function (input, callbacks) {
+      // Checked before the copy below, which only the reset() after a compilation frees.
+      assertCallbacks(callbacks);
       // Copied before the guarded call: a failed allocation leaves nothing behind in the
       // compiler, so it must not mark the instance poisoned.
       const inputPointer = coreBindings.allocCString(input);
@@ -253,11 +255,21 @@ function describeValue (value): string {
   return `${typeof value === 'object' ? 'an' : 'a'} ${typeof value}`;
 }
 
-// calls compile() with args || cb
-function runWithCallbacks (hypJson, coreBindings, callbacks, compile, args) {
+/**
+ * Checks that the callbacks of a compilation, if any were given, are an object.
+ *
+ * @param callbacks The callbacks argument of a compile method.
+ */
+function assertCallbacks (callbacks) {
   if (callbacks) {
     assert(typeof callbacks === 'object', 'Invalid callback object specified.');
-  } else {
+  }
+}
+
+// calls compile() with args || cb
+function runWithCallbacks (hypJson, coreBindings, callbacks, compile, args) {
+  assertCallbacks(callbacks);
+  if (!callbacks) {
     callbacks = {};
   }
 

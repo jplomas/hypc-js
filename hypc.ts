@@ -24,9 +24,9 @@ const commanderParseInt = function (value) {
 };
 
 program.name('hypcjs');
-program.version(hypc.version());
+program.version(hypc.version(), '-V, --version', 'Show version and exit.');
 program
-  .option('--version', 'Show version and exit.')
+  .argument('[files...]', 'Source files to compile.')
   .option('--optimize', 'Enable bytecode optimizer.', false)
   .option(
     '--optimize-runs <optimize-runs>',
@@ -201,7 +201,7 @@ const cliInput = {
       }
     }
   },
-  sources: sources
+  sources
 };
 if (program.verbose) { console.log('>>> Compiling:\n' + toFormattedJson(cliInput) + '\n'); }
 const output = JSON.parse(hypc.compile(JSON.stringify(cliInput), callbacks));

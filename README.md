@@ -12,6 +12,8 @@ To use the latest stable version of the Hyperion compiler via Node.js you can in
 npm install @theqrl/hypc
 ```
 
+It needs Node.js 22.12 or later.
+
 ### Usage on the Command-Line
 
 If this package is installed globally (`npm install -g @theqrl/hypc`), a command-line tool called `hypcjs` will be available.

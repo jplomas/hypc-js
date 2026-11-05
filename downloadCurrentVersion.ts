@@ -5,22 +5,21 @@
 
 import * as fs from 'fs';
 import { https } from 'follow-redirects';
-import MemoryStream from 'memorystream';
 import { keccak256 } from 'js-sha3';
 const pkg = require('./package.json');
 
 function getVersionList (cb) {
   console.log('Retrieving available version list...');
 
-  const mem = new MemoryStream(null, { readable: false });
   https.get('https://binaries.theqrl.org/bin/list.json', function (response) {
     if (response.statusCode !== 200) {
       console.log('Error downloading file: ' + response.statusCode);
       process.exit(1);
     }
-    response.pipe(mem);
+    const chunks = [];
+    response.on('data', chunk => chunks.push(chunk));
     response.on('end', function () {
-      cb(mem.toString());
+      cb(Buffer.concat(chunks).toString());
     });
   });
 }

@@ -131,6 +131,42 @@ tape('CLI', function (t) {
     spt.end();
   });
 
+  // As in hypc, the working directory is not allowed by default when it is the filesystem root,
+  // since every readable file would then be importable.
+  t.test('filesystem root as working directory is not allowed', function (st) {
+    const root = importEscapeFixture();
+    fs.writeFileSync(path.join(root, 'proj', 'evil.hyp'), `import "${root}/outside/leak.txt";\ncontract X {}\n`);
+    const outputDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    const spt = spawn(st, `${path.resolve('hypc.js')} --bin -o ${outputDir} ${root}/proj/evil.hyp`, { cwd: path.parse(root).root });
+    spt.stderr.match(/File outside of allowed directories\./);
+    spt.stderr.match(/^(?![\s\S]*OUTSIDE-SECRET)/);
+    spt.fails();
+    spt.end();
+  });
+
+  t.test('filesystem root as working directory still allows the input file directory', function (st) {
+    const root = importEscapeFixture();
+    fs.writeFileSync(path.join(root, 'proj', 'lib.hyp'), 'contract L {}\n');
+    fs.writeFileSync(path.join(root, 'proj', 'main.hyp'), 'import "./lib.hyp";\ncontract M {}\n');
+    const outputDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    const spt = spawn(st, `${path.resolve('hypc.js')} --bin -o ${outputDir} ${root}/proj/main.hyp`, { cwd: path.parse(root).root });
+    spt.stderr.empty();
+    spt.succeeds();
+    spt.end();
+  });
+
+  t.test('filesystem root as explicit base path is allowed', function (st) {
+    const root = importEscapeFixture();
+    const fsRoot = path.parse(root).root;
+    fs.writeFileSync(path.join(root, 'outside', 'ext.hyp'), 'contract E {}\n');
+    fs.writeFileSync(path.join(root, 'proj', 'main.hyp'), `import "${root}/outside/ext.hyp";\ncontract M {}\n`);
+    const outputDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    const spt = spawn(st, `${path.resolve('hypc.js')} --bin --base-path ${fsRoot} -o ${outputDir} ${root}/proj/main.hyp`, { cwd: fsRoot });
+    spt.stderr.empty();
+    spt.succeeds();
+    spt.end();
+  });
+
   t.test('invalid file specified', function (st) {
     const spt = spawn(st, './hypc.js --bin test/fileNotFound.hyp');
     spt.stderr.match(/^Error reading /);

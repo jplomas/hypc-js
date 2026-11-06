@@ -36,6 +36,9 @@ As in `hypc`, the import callback only reads files inside the base path (the wor
 when ``--base-path`` is not given), the include paths and the directories of the files given on
 the command line. Symbolic links are resolved first. Any other import fails with
 `File outside of allowed directories.`
+If the working directory is the root of the filesystem (or of a drive on Windows) and
+``--base-path`` is not given, the working directory is not allowed, since every readable file
+would then be importable. Pass ``--base-path`` explicitly if you really need it.
 
 Note: ensure that all the files you specify on the command line are located inside the base path or
 one of the include paths.

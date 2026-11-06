@@ -69,7 +69,15 @@ function realPathIfExists (filePath) {
 // As in hypc, imports may only be read from the base path (the working directory by default),
 // the include paths and the directories of the files given on the command line. Symlinks are
 // resolved before the check, so a link cannot point outside these directories.
-const allowedDirectories = [options.basePath || '.']
+// Without a base path the working directory is not allowed when it is the root of the filesystem
+// (or of a drive on Windows), since that would make every readable file importable.
+function defaultAllowedDirectories () {
+  if (options.basePath) { return [options.basePath]; }
+  const workingDirectory = realPathIfExists('.');
+  return path.parse(workingDirectory).root === workingDirectory ? [] : [workingDirectory];
+}
+
+const allowedDirectories = defaultAllowedDirectories()
   .concat(options.includePath || [], files.map((file) => path.dirname(file)))
   .map(realPathIfExists);
 
